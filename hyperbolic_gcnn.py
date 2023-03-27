@@ -70,7 +70,7 @@ class HyperboloidAggregation(Layer):
         vertex_pairs = tf.gather(vertices, edges)
         vectors = log(vertex_pairs[:, 0, :], vertex_pairs[:, 1, :], self.k)
         vectors = weights * vectors
-        tangent_aggregations = tf.math.unsorted_segment_mean(vectors, edges[:, 0], num_points)
+        tangent_aggregations = tf.math.unsorted_segment_sum(vectors, edges[:, 0], num_points)
         return exponential(vertices, tangent_aggregations, self.k)
 
     def get_config(self):

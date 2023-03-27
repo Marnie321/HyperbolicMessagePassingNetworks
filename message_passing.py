@@ -42,7 +42,6 @@ class MessagePassingMLP2(MessagePassing):
         else:
             self.hidden_units = output_dim
 
-
     def build(self, input_shape):
         super().build(input_shape)
         self.w1 = self.add_weight(
@@ -67,6 +66,76 @@ class MessagePassingMLP2(MessagePassing):
         return out
 
 
+class HiddenStateUpdate(Layer):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.input_dim = None
+        self.message_dim = None
+        self.input_feature_dim = None
+
+    def build(self, input_shape):
+        super().build(input_shape)
+
+        self.input_dim = input_shape[0][1]
+        self.message_dim = input_shape[2][1]
+        self.input_feature_dim = self.input_dim + self.message_dim
+
+    def aggregate_messages(self, messages, edges, num_points):
+        message_out = tf.math.unsorted_segment_sum(messages, edges[:, 0], num_points)
+        return message_out
+
+    def update_hidden_states(self, hidden_states_in, message_aggr):
+        return tf.concat([hidden_states_in, message_aggr], -1)
+
+    def call(self, inputs):
+        hidden_states_in, edges, messages = inputs
+        num_points = tf.shape(hidden_states_in)[0]
+
+        message_aggr = self.aggregate_messages(messages, edges, num_points)
+
+        hidden_states_out = self.update_hidden_states(hidden_states_in, message_aggr)
+
+        return hidden_states_out
+
+class HiddenStateUpdateMLP2(HiddenStateUpdate):
+    def __init__(self, output_dim, hidden_units=None, **kwargs):
+        super().__init__(**kwargs)
+
+        self.output_dim = output_dim
+        if hidden_units is not None:
+            self.hidden_units = hidden_units
+        else:
+            self.hidden_units = output_dim
+
+
+    def build(self, input_shape):
+        super().build(input_shape)
+        self.w1 = self.add_weight(
+            shape=(self.input_features_dim, self.hidden_units),
+            initializer='glorot_uniform',
+            trainable=True,
+        )
+        self.w2 = self.add_weight(
+            shape=(self.hidden_units, self.output_dim),
+            initializer='glorot_uniform',
+            trainable=True,
+        )
+        self.b1 = self.add_weight(
+            shape=(1, self.hidden_units)
+        )
+
+
+    def aggregate_messages(self, messages, edges, num_points):
+        message_out = tf.math.unsorted_segment_sum(messages, edges[:, 0], num_points)
+        return message_out
+
+    def update_hidden_states(self, hidden_states_in, message_aggr):
+        features = tf.concat([hidden_states_in, message_aggr], -1)
+        out = tf.einsum('ij,jk->ik', features, self.w1)
+        out += self.b1
+        out = tf.nn.gelu(out)
+        out = tf.einsum('ij,jk->ik', out, self.w2)
+        return out
 
 
 if __name__ == '__main__':
